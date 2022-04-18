@@ -2,11 +2,11 @@
 
 FASTLED_USING_NAMESPACE
 
-// FastLED "100-lines-of-code" demo reel, showing just a few 
-// of the kinds of animation patterns you can quickly and easily 
-// compose using FastLED.  
+// FastLED "100-lines-of-code" demo reel, showing just a few
+// of the kinds of animation patterns you can quickly and easily
+// compose using FastLED.
 //
-// This example also shows one easy way to define multiple 
+// This example also shows one easy way to define multiple
 // animations patterns and have them automatically rotate.
 //
 // -Mark Kriegsman, December 2014
@@ -15,10 +15,6 @@ FASTLED_USING_NAMESPACE
 #warning "Requires FastLED 3.1 or later; check github for latest code."
 #endif
 
-#define DATA_PIN    2
-//#define CLK_PIN   4
-#define LED_TYPE    WS2811
-#define COLOR_ORDER GRB
 #define NUM_STRIPS 4
 #define NUM_LEDS_PER_STRIP 128
 #define NUM_LEDS NUM_STRIPS * NUM_LEDS_PER_STRIP
@@ -26,8 +22,10 @@ CRGB leds[NUM_STRIPS * NUM_LEDS_PER_STRIP];
 
 float mapX[NUM_LEDS];
 float mapY[NUM_LEDS];
+float mapRho[NUM_LEDS];
+float mapTheta[NUM_LEDS];
 
-#define BRIGHTNESS          255
+#define BRIGHTNESS          128
 #define FRAMES_PER_SECOND  120
 
 #define ARRAY_SIZE(A) (sizeof(A) / sizeof((A)[0]))
@@ -50,9 +48,9 @@ void initXYMap(){
         case 0:
           ringSize = 24;
           offset = 3;
-          if (j < ringSize) { 
-            x = 42 + 40 * sin(2 * PI * (j + offset) / ringSize);
-            y = 42 + 40 * cos(2 * PI * (j + offset) / ringSize);
+          if (j < ringSize) {
+            x = 42.4 + 50 * sin(2 * PI * (j + offset) / ringSize);
+            y = 42.4 + 50 * cos(2 * PI * (j + offset) / ringSize);
           }
           break;
         case 1:
@@ -75,16 +73,18 @@ void initXYMap(){
           ringSize = 99.5;
           offset = 1;
           if (j < ringSize) {
-            x = 270 * sin(2 * PI * (j + offset) / ringSize);
-            y = 270 * cos(2 * PI * (j + offset) / ringSize);
+            x = 300 * sin(2 * PI * (j + offset) / ringSize);
+            y = 300 * cos(2 * PI * (j + offset) / ringSize);
           }
           break;
       }
       mapX[index] = x;
       mapY[index] = y;
+      mapRho[index] = sqrtf(x * x + y * y);
+      mapTheta[index] = atan2f(y, x);
 
       if (x > -1000) {
-        
+
         Serial.print(x);
         Serial.print(",");
         Serial.print(y);
@@ -94,12 +94,12 @@ void initXYMap(){
     }
 }
 
-#define NOISE_SCALE 1000000
+#define NOISE_SCALE 100000
 
 float fractalNoise(float x, float y, float z) {
   float r = 0;
   float amp = 1.0;
-  for (int octave = 0; octave < 4; octave++) {
+  for (int octave = 0; octave < 2; octave++) {
     r += ((float)inoise16(x * NOISE_SCALE, y * NOISE_SCALE, z * NOISE_SCALE)) * amp / UINT16_MAX;
     amp /= 2;
     x *= 2;
@@ -118,8 +118,10 @@ float noise(float x){
   return ((float)inoise16(x * NOISE_SCALE))/ UINT16_MAX;
 }
 
-void rings() 
+void rings()
 {
+    long t0 = millis();
+
     long now = millis();
     float speed = 0.002;
     float zspeed = 0.1;
@@ -128,7 +130,7 @@ void rings()
     float hue = now * 0.01;
     float scale = 0.005;
 
-    float saturation = 100 * constrain(pow(1.15 * noise(now * 0.000122), 2.5), 0, 1);
+    float saturation = constrain(pow(1.15 * noise(now * 0.000122), 2.5), 0, 1);
     float spacing = noise(now * 0.000124) * 0.1;
 
     dx += cos(angle) * speed;
@@ -138,30 +140,39 @@ void rings()
     float centerx = noise(now *  0.000125) * 1.25 * width;
     float centery = noise(now * -0.000125) * 1.25 * height;
 
+    long t1 = millis();
+
     for (int i = 0; i < NUM_LEDS; i++){
       if (mapX[i] > -1000){
-        float x = mapX[i] + 300;
-        float y = mapX[i] + 300;
+        float x = cos(mapTheta[i] + now * 0.000) * mapRho[i] + 300;
+        float y = sin(mapTheta[i] + now * 0.000) * mapRho[i] + 300;
 
         float dist = sqrt(pow(x - centerx, 2) + pow(y - centery, 2));
         float pulse = (sin(dz + dist * spacing) - 0.3) * 0.3;
-        
+
         float n = fractalNoise(dx + x*scale + pulse, dy + y*scale, z) - 0.75;
         float m = fractalNoise(dx + x*scale, dy + y*scale, z + 10.0) - 0.75;
 
-        float hue_final = (hue + 40.0 * m);
-        while (hue_final > 100) hue_final -= 100;
-        uint8_t i_hue = hue_final * 2.55;
-        uint8_t i_sat = saturation * 2.55;
-        uint8_t i_val = 255 * constrain(pow(3.0 * n, 1.5), 0, 0.9);
+        int hue_final = ((int)(hue + 40.0 * m) % 100);
+        uint8_t i_hue = hue_final * 255;
+        uint8_t i_sat_l = saturation * 255;
+        uint8_t i_lum = 255 * constrain(pow(3.0 * n, 1.5), 0, 0.9);
 
-        leds[i] = CHSV(i_hue, i_sat, i_val);
+        uint8_t i_val = i_lum + saturation * 0.01 * min(i_lum, 255 - i_lum);
+        uint8_t i_sat_v = (i_val == 0) ? 0 : 511 * (1 - (float)i_lum / (float)i_val);
+
+        leds[i] = blend(leds[i], CHSV(i_hue, i_sat_l, i_val), 255);
       }
   }
 
+  long t2 = millis();
+  Serial.print(t1 - t0);
+  Serial.print(",");
+  Serial.println(t2 - t1);
+
 }
 
-void rainbow()
+void test()
 {
   long t = millis() / 10;
 
@@ -186,22 +197,28 @@ void rainbow()
   }
 }
 
-void box()
+void rainbow()
 {
   long t = millis() / 10;
 
   for (int i = 0; i < NUM_LEDS; i++){
       if (mapX[i] > -1000){
-        leds[i] = CRGB(mapX[i], mapY[i], 0);
+        float x = mapX[i];
+        float y = mapY[i];
+
+        uint8_t hue = (mapTheta[i] + PI) / (2 * PI) * 255 + t;
+        // 400 to always leave a bit of colour in
+        uint8_t sat = (1 - mapRho[i] / 400) * 255;
+        leds[i] = CHSV(hue, sat, 255);
       }
-  }    
+  }
 }
 
 void setup() {
   delay(1000); // 1 second delay for recovery
 
   Serial.begin(9600);
-  
+
   LEDS.addLeds<WS2811_PORTD,NUM_STRIPS>(leds, NUM_LEDS_PER_STRIP);
 
   // set master brightness control
@@ -220,23 +237,34 @@ void setup() {
 
 // List of patterns to cycle through.  Each is defined as a separate function below.
 typedef void (*SimplePatternList[])();
-SimplePatternList gPatterns = { rings, rainbow, box };
-  
+SimplePatternList gPatterns = { rings };
+
 void nextPattern()
 {
   // add one to the current pattern number, and wrap around at the end
   gCurrentPatternNumber = (gCurrentPatternNumber + 1) % ARRAY_SIZE( gPatterns);
 }
 
+long lastT = 0;
+
+
 void loop()
 {
+
+  long t = millis();
+  Serial.println(t - lastT);
+  lastT = t;
   // Call the current pattern function once, updating the 'leds' array
   gPatterns[gCurrentPatternNumber]();
 
   // send the 'leds' array out to the actual LED strip
-  FastLED.show();  
+  // make sure inner ring is not too bright;
+  for (int i = 0; i < 24; i++){
+    leds[i].fadeLightBy(128);
+  }
+  FastLED.show();
   // insert a delay to keep the framerate modest
-  // FastLED.delay(1000/FRAMES_PER_SECOND); 
+  // FastLED.delay(1000/FRAMES_PER_SECOND);
 
   // do some periodic updates
   EVERY_N_MILLISECONDS( 20 ) { gHue++; } // slowly cycle the "base color" through the rainbow
