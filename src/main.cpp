@@ -19,10 +19,15 @@ FASTLED_USING_NAMESPACE
 //#define CLK_PIN   4
 #define LED_TYPE    WS2811
 #define COLOR_ORDER GRB
-#define NUM_LEDS    48
-CRGB leds[NUM_LEDS];
+#define NUM_STRIPS 4
+#define NUM_LEDS_PER_STRIP 128
+#define NUM_LEDS NUM_STRIPS * NUM_LEDS_PER_STRIP
+CRGB leds[NUM_STRIPS * NUM_LEDS_PER_STRIP];
 
-#define BRIGHTNESS          96
+float mapX[NUM_LEDS];
+float mapY[NUM_LEDS];
+
+#define BRIGHTNESS          255
 #define FRAMES_PER_SECOND  120
 
 #define ARRAY_SIZE(A) (sizeof(A) / sizeof((A)[0]))
@@ -30,7 +35,66 @@ CRGB leds[NUM_LEDS];
 uint8_t gCurrentPatternNumber = 0; // Index number of which pattern is current
 uint8_t gHue = 0; // rotating "base color" used by many of the patterns
 
-#define NOISE_SCALE 100000
+void initXYMap(){
+    for(int i = 0; i < NUM_STRIPS; i++) {
+    for(int j = 0; j < NUM_LEDS_PER_STRIP; j++) {
+      float x = -1000;
+      float y = -1000;
+
+      float ringSize;
+      float offset;
+
+      int index = (i*NUM_LEDS_PER_STRIP) + j;
+
+      switch(i){
+        case 0:
+          ringSize = 24;
+          offset = 3;
+          if (j < ringSize) { 
+            x = 42 + 40 * sin(2 * PI * (j + offset) / ringSize);
+            y = 42 + 40 * cos(2 * PI * (j + offset) / ringSize);
+          }
+          break;
+        case 1:
+          ringSize = 49.5;
+          offset = 3;
+          if (j < ringSize) {
+            x = 140 * sin(2 * PI * (j + offset) / ringSize);
+            y = 140 * cos(2 * PI * (j + offset) / ringSize);
+          }
+          break;
+        case 2:
+          ringSize = 84.9;
+          offset = 2;
+          if (j < ringSize) {
+            x = 210 * sin(2 * PI * (j + offset) / ringSize);
+            y = 210 * cos(2 * PI * (j + offset) / ringSize);
+          }
+          break;
+        case 3:
+          ringSize = 99.5;
+          offset = 1;
+          if (j < ringSize) {
+            x = 270 * sin(2 * PI * (j + offset) / ringSize);
+            y = 270 * cos(2 * PI * (j + offset) / ringSize);
+          }
+          break;
+      }
+      mapX[index] = x;
+      mapY[index] = y;
+
+      if (x > -1000) {
+        
+        Serial.print(x);
+        Serial.print(",");
+        Serial.print(y);
+        Serial.println();
+      }
+    }
+    }
+}
+
+#define NOISE_SCALE 1000000
 
 float fractalNoise(float x, float y, float z) {
   float r = 0;
@@ -45,8 +109,8 @@ float fractalNoise(float x, float y, float z) {
   return r;
 }
 
-int width = 128;
-int height = 128;
+int width = 600;
+int height = 600;
 
 float dx, dy, dz;
 
@@ -54,7 +118,7 @@ float noise(float x){
   return ((float)inoise16(x * NOISE_SCALE))/ UINT16_MAX;
 }
 
-void rainbow() 
+void rings() 
 {
     long now = millis();
     float speed = 0.002;
@@ -75,38 +139,80 @@ void rainbow()
     float centery = noise(now * -0.000125) * 1.25 * height;
 
     for (int i = 0; i < NUM_LEDS; i++){
-      float rho = i * PI * 2 / NUM_LEDS;
-      float x = (sin(rho) + 1) * 64;
-      float y = (cos(rho) + 1) * 64;
+      if (mapX[i] > -1000){
+        float x = mapX[i] + 300;
+        float y = mapX[i] + 300;
 
-      float dist = sqrt(pow(x - centerx, 2) + pow(y - centery, 2));
-      float pulse = (sin(dz + dist * spacing) - 0.3) * 0.3;
-      
-      float n = fractalNoise(dx + x*scale + pulse, dy + y*scale, z) - 0.75;
-      float m = fractalNoise(dx + x*scale, dy + y*scale, z + 10.0) - 0.75;
+        float dist = sqrt(pow(x - centerx, 2) + pow(y - centery, 2));
+        float pulse = (sin(dz + dist * spacing) - 0.3) * 0.3;
+        
+        float n = fractalNoise(dx + x*scale + pulse, dy + y*scale, z) - 0.75;
+        float m = fractalNoise(dx + x*scale, dy + y*scale, z + 10.0) - 0.75;
 
-      float hue_final = (hue + 40.0 * m);
-      while (hue_final > 100) hue_final -= 100;
-      uint8_t i_hue = hue_final * 2.55;
-      uint8_t i_sat = saturation * 2.55;
-      uint8_t i_val = 255 * constrain(pow(3.0 * n, 1.5), 0, 0.9);
+        float hue_final = (hue + 40.0 * m);
+        while (hue_final > 100) hue_final -= 100;
+        uint8_t i_hue = hue_final * 2.55;
+        uint8_t i_sat = saturation * 2.55;
+        uint8_t i_val = 255 * constrain(pow(3.0 * n, 1.5), 0, 0.9);
 
-      leds[i] = CHSV(i_hue, i_sat, i_val);
+        leds[i] = CHSV(i_hue, i_sat, i_val);
+      }
   }
 
 }
 
+void rainbow()
+{
+  long t = millis() / 10;
+
+  for (int i = 0; i < NUM_LEDS; i++){
+    float x = mapX[i];
+    float y = mapY[i];
+    if (x > -1000) {
+      if (x > t % 1000 - 300) {
+        if (y > t % 600 - 300)
+          leds[i] = CRGB::Red;
+        else
+          leds[i] = CRGB::Purple;
+        } else {
+          if (y > t % 600 - 300)
+            leds[i] = CRGB::Green;
+          else
+            leds[i] = CRGB::Blue;
+        }
+      } else {
+        leds[i] = CRGB::Green;
+      }
+  }
+}
+
+void box()
+{
+  long t = millis() / 10;
+
+  for (int i = 0; i < NUM_LEDS; i++){
+      if (mapX[i] > -1000){
+        leds[i] = CRGB(mapX[i], mapY[i], 0);
+      }
+  }    
+}
+
 void setup() {
-  delay(3000); // 3 second delay for recovery
+  delay(1000); // 1 second delay for recovery
+
+  Serial.begin(9600);
   
-  // tell FastLED about the LED strip configuration
-  FastLED.addLeds<LED_TYPE,DATA_PIN,COLOR_ORDER>(leds, NUM_LEDS).setCorrection(TypicalLEDStrip);
-  //FastLED.addLeds<LED_TYPE,DATA_PIN,CLK_PIN,COLOR_ORDER>(leds, NUM_LEDS).setCorrection(TypicalLEDStrip);
+  LEDS.addLeds<WS2811_PORTD,NUM_STRIPS>(leds, NUM_LEDS_PER_STRIP);
 
   // set master brightness control
   FastLED.setBrightness(BRIGHTNESS);
 
-  fill_solid(leds, NUM_LEDS, CRGB::Black);
+  fill_solid(leds, NUM_STRIPS * NUM_LEDS_PER_STRIP, CRGB::Black);
+  FastLED.show();
+  delay(500);
+
+  initXYMap();
+  rainbow();
   FastLED.show();
   delay(500);
 }
@@ -114,7 +220,7 @@ void setup() {
 
 // List of patterns to cycle through.  Each is defined as a separate function below.
 typedef void (*SimplePatternList[])();
-SimplePatternList gPatterns = { rainbow };
+SimplePatternList gPatterns = { rings, rainbow, box };
   
 void nextPattern()
 {
@@ -130,7 +236,7 @@ void loop()
   // send the 'leds' array out to the actual LED strip
   FastLED.show();  
   // insert a delay to keep the framerate modest
-  FastLED.delay(1000/FRAMES_PER_SECOND); 
+  // FastLED.delay(1000/FRAMES_PER_SECOND); 
 
   // do some periodic updates
   EVERY_N_MILLISECONDS( 20 ) { gHue++; } // slowly cycle the "base color" through the rainbow
