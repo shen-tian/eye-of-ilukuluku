@@ -30,7 +30,19 @@ float mapTheta[NUM_LEDS];
 
 #define ARRAY_SIZE(A) (sizeof(A) / sizeof((A)[0]))
 
+DEFINE_GRADIENT_PALETTE( iluk_gp ) {
+  0,    255,  255,  255,   //white
+96,   204, 255, 0,  //lime
+160,    212, 2, 2,   // red
+255,   235, 73, 127 // pink
+};
+
+CRGBPalette256 ilukPal = iluk_gp;
+
 uint8_t gCurrentPatternNumber = 0; // Index number of which pattern is current
+uint8_t gNextPatternNumber = 1;
+
+uint8_t gCurrentMix = 0;
 uint8_t gHue = 0; // rotating "base color" used by many of the patterns
 
 void initXYMap(){
@@ -120,7 +132,9 @@ float noise(float x){
 
 bool odd = false;
 
-void rings()
+CRGB ringsLeds[NUM_STRIPS * NUM_LEDS_PER_STRIP];
+
+void rings(uint8_t mix)
 {
     long t0 = millis();
 
@@ -144,15 +158,19 @@ void rings()
 
     long t1 = millis();
 
+    float lastN = 0;
+
     for (int i = 0; i < NUM_LEDS; i++){
-      if (mapX[i] > -1000 && odd == ((i % 2) == 1)){
-        float x = cos(mapTheta[i] + now * 0.001) * mapRho[i] + 300;
-        float y = sin(mapTheta[i] + now * 0.001) * mapRho[i] + 300;
+      bool doRender = odd == ((i % 2) == 1);
+      if (mapX[i] > -1000 && doRender){
+        float x = cos(mapTheta[i] + now * 0.0002) * mapRho[i] + 300;
+        float y = sin(mapTheta[i] + now * 0.0002) * mapRho[i] + 300;
 
         float dist = sqrt(pow(x - centerx, 2) + pow(y - centery, 2));
         float pulse = (sin(dz + dist * spacing) - 0.3) * 0.3;
 
         float n = fractalNoise(dx + x*scale + pulse, dy + y*scale, z) - 0.75;
+
         // float m = fractalNoise(dx + x*scale, dy + y*scale, z + 10.0) - 0.75;
         float m = 0.5;
 
@@ -164,8 +182,13 @@ void rings()
         uint8_t i_val = i_lum + saturation * 0.01 * min(i_lum, 255 - i_lum);
         uint8_t i_sat_v = (i_val == 0) ? 0 : 511 * (1 - (float)i_lum / (float)i_val);
 
-        leds[i] = blend(leds[i], CHSV(i_hue, i_sat_l, i_lum), 64);
+        uint8_t index = abs(255 - 2 * i_hue);
+
+        CRGB col = ColorFromPalette(ilukPal, index, i_lum); // CHSV(i_hue, i_sat_l, i_lum); 
+        ringsLeds[i] = blend(ringsLeds[i], col, 64);
       }
+
+      leds[i] = blend(leds[i], ringsLeds[i], mix);
   }
 
   odd = !odd;
@@ -202,7 +225,7 @@ void test()
   }
 }
 
-void rainbow()
+void roll(uint8_t mix)
 {
   long t = millis() / 10;
 
@@ -211,10 +234,29 @@ void rainbow()
         float x = mapX[i];
         float y = mapY[i];
 
-        uint8_t hue = (mapTheta[i] + PI) / (2 * PI) * 255 + t;
+        uint8_t hueIdx = (mapTheta[i] + PI) / (2 * PI) * 255 + (t/2);
+        hueIdx = abs(255 - 2 * hueIdx);
         // 400 to always leave a bit of colour in
-        uint8_t sat = (1 - mapRho[i] / 400) * 255;
-        leds[i] = CHSV(hue, sat, 255);
+        uint8_t val = (1 - mapRho[i] / 600) * 255;
+        CRGB col = ColorFromPalette(ilukPal, hueIdx, val); 
+        leds[i] = blend(leds[i], col, mix);
+      }
+  }
+}
+
+void zoom(uint8_t mix)
+{
+  long t = millis() / 10;
+
+  for (int i = 0; i < NUM_LEDS; i++){
+      if (mapX[i] > -1000){
+
+        uint8_t hueIdx = (mapRho[i] / 300) * 255 + t / 8;
+        hueIdx = abs(255 - 2 * hueIdx);
+        // 400 to always leave a bit of colour in
+        // uint8_t val = (1 - mapRho[i] / 600) * 255;
+        CRGB col = ColorFromPalette(ilukPal, hueIdx, 255);
+        leds[i] = blend(leds[i], col, mix);
       }
   }
 }
@@ -234,24 +276,24 @@ void setup() {
   delay(500);
 
   initXYMap();
-  rainbow();
+  test();
   FastLED.show();
   delay(500);
 }
 
 
 // List of patterns to cycle through.  Each is defined as a separate function below.
-typedef void (*SimplePatternList[])();
-SimplePatternList gPatterns = { rings };
+typedef void (*SimplePatternList[])(uint8_t);
+SimplePatternList gPatterns = { zoom, rings, roll };
 
 void nextPattern()
 {
   // add one to the current pattern number, and wrap around at the end
   gCurrentPatternNumber = (gCurrentPatternNumber + 1) % ARRAY_SIZE( gPatterns);
+  gNextPatternNumber = (gCurrentPatternNumber + 1) % ARRAY_SIZE(gPatterns); 
 }
 
 long lastT = 0;
-
 
 void loop()
 {
@@ -260,7 +302,8 @@ void loop()
   Serial.println(t - lastT);
   lastT = t;
   // Call the current pattern function once, updating the 'leds' array
-  gPatterns[gCurrentPatternNumber]();
+  gPatterns[gCurrentPatternNumber](255);
+  gPatterns[gNextPatternNumber](gCurrentMix);
 
   // send the 'leds' array out to the actual LED strip
   // make sure inner ring is not too bright;
@@ -272,5 +315,12 @@ void loop()
   // FastLED.delay(1000/FRAMES_PER_SECOND);
 
   // do some periodic updates
-  EVERY_N_SECONDS( 10 ) { nextPattern(); } // change patterns periodically
+  EVERY_N_SECONDS( 120 ) { 
+      nextPattern();
+      gCurrentMix = 0;
+  } // change patterns periodically
+  EVERY_N_MILLIS( 20 ) { 
+    gCurrentMix = constrain( gCurrentMix + 1, 0, 255); 
+  }
+  
 }
