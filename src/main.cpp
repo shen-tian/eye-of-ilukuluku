@@ -118,6 +118,8 @@ float noise(float x){
   return ((float)inoise16(x * NOISE_SCALE))/ UINT16_MAX;
 }
 
+bool odd = false;
+
 void rings()
 {
     long t0 = millis();
@@ -143,27 +145,30 @@ void rings()
     long t1 = millis();
 
     for (int i = 0; i < NUM_LEDS; i++){
-      if (mapX[i] > -1000){
-        float x = cos(mapTheta[i] + now * 0.000) * mapRho[i] + 300;
-        float y = sin(mapTheta[i] + now * 0.000) * mapRho[i] + 300;
+      if (mapX[i] > -1000 && odd == ((i % 2) == 1)){
+        float x = cos(mapTheta[i] + now * 0.001) * mapRho[i] + 300;
+        float y = sin(mapTheta[i] + now * 0.001) * mapRho[i] + 300;
 
         float dist = sqrt(pow(x - centerx, 2) + pow(y - centery, 2));
         float pulse = (sin(dz + dist * spacing) - 0.3) * 0.3;
 
         float n = fractalNoise(dx + x*scale + pulse, dy + y*scale, z) - 0.75;
-        float m = fractalNoise(dx + x*scale, dy + y*scale, z + 10.0) - 0.75;
+        // float m = fractalNoise(dx + x*scale, dy + y*scale, z + 10.0) - 0.75;
+        float m = 0.5;
 
         int hue_final = ((int)(hue + 40.0 * m) % 100);
         uint8_t i_hue = hue_final * 255;
         uint8_t i_sat_l = saturation * 255;
-        uint8_t i_lum = 255 * constrain(pow(3.0 * n, 1.5), 0, 0.9);
+        uint8_t i_lum = 255 * constrain(pow(3.0 * n, 0.5), 0, 0.9);
 
         uint8_t i_val = i_lum + saturation * 0.01 * min(i_lum, 255 - i_lum);
         uint8_t i_sat_v = (i_val == 0) ? 0 : 511 * (1 - (float)i_lum / (float)i_val);
 
-        leds[i] = blend(leds[i], CHSV(i_hue, i_sat_l, i_val), 255);
+        leds[i] = blend(leds[i], CHSV(i_hue, i_sat_l, i_lum), 64);
       }
   }
+
+  odd = !odd;
 
   long t2 = millis();
   Serial.print(t1 - t0);
@@ -259,14 +264,13 @@ void loop()
 
   // send the 'leds' array out to the actual LED strip
   // make sure inner ring is not too bright;
-  for (int i = 0; i < 24; i++){
-    leds[i].fadeLightBy(128);
-  }
+  // for (int i = 0; i < 24; i++){
+  //   leds[i].fadeLightBy(128);
+  // }
   FastLED.show();
   // insert a delay to keep the framerate modest
   // FastLED.delay(1000/FRAMES_PER_SECOND);
 
   // do some periodic updates
-  EVERY_N_MILLISECONDS( 20 ) { gHue++; } // slowly cycle the "base color" through the rainbow
   EVERY_N_SECONDS( 10 ) { nextPattern(); } // change patterns periodically
 }
