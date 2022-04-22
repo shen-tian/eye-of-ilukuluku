@@ -69,8 +69,8 @@ void initXYMap(){
           ringSize = 49.5;
           offset = 3;
           if (j < ringSize) {
-            x = 140 * sin(2 * PI * (j + offset) / ringSize);
-            y = 140 * cos(2 * PI * (j + offset) / ringSize);
+            x = 145 * sin(2 * PI * (j + offset) / ringSize);
+            y = 145 * cos(2 * PI * (j + offset) / ringSize);
           }
           break;
         case 2:
@@ -85,8 +85,8 @@ void initXYMap(){
           ringSize = 99.5;
           offset = 1;
           if (j < ringSize) {
-            x = 300 * sin(2 * PI * (j + offset) / ringSize);
-            y = 300 * cos(2 * PI * (j + offset) / ringSize);
+            x = 285 * sin(2 * PI * (j + offset) / ringSize);
+            y = 285 * cos(2 * PI * (j + offset) / ringSize);
           }
           break;
       }
@@ -143,7 +143,7 @@ void rings(uint8_t mix)
     float zspeed = 0.1;
     float angle = sin(now * 0.001);
     float z = now * 0.00008;
-    float hue = now * 0.01;
+    float hue = now * 0.002;
     float scale = 0.005;
 
     float saturation = constrain(pow(1.15 * noise(now * 0.000122), 2.5), 0, 1);
@@ -172,15 +172,11 @@ void rings(uint8_t mix)
         float n = fractalNoise(dx + x*scale + pulse, dy + y*scale, z) - 0.75;
 
         // float m = fractalNoise(dx + x*scale, dy + y*scale, z + 10.0) - 0.75;
-        float m = 0.5;
+        float m = noise(mapRho[i] * 10 + now / 1000.0);
 
         int hue_final = ((int)(hue + 40.0 * m) % 100);
-        uint8_t i_hue = hue_final * 255;
-        uint8_t i_sat_l = saturation * 255;
+        uint8_t i_hue = hue_final * 2.55;
         uint8_t i_lum = 255 * constrain(pow(3.0 * n, 0.5), 0, 0.9);
-
-        uint8_t i_val = i_lum + saturation * 0.01 * min(i_lum, 255 - i_lum);
-        uint8_t i_sat_v = (i_val == 0) ? 0 : 511 * (1 - (float)i_lum / (float)i_val);
 
         uint8_t index = abs(255 - 2 * i_hue);
 
@@ -326,6 +322,9 @@ void loop()
     gPatterns[gCurrentPatternNumber](255);
   gPatterns[gNextPatternNumber](gCurrentMix);
 
+  // rings(255);
+  // test();
+
   // send the 'leds' array out to the actual LED strip
   // make sure inner ring is not too bright;
   // for (int i = 0; i < 24; i++){
@@ -336,7 +335,7 @@ void loop()
   // FastLED.delay(1000/FRAMES_PER_SECOND);
 
   // do some periodic updates
-  EVERY_N_SECONDS( 120 ) { 
+  EVERY_N_SECONDS( 180 ) { 
       nextPattern();
       gCurrentMix = 0;
   } // change patterns periodically
