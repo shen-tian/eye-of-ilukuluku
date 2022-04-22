@@ -200,6 +200,32 @@ void rings(uint8_t mix)
 
 }
 
+CRGB sparkleLeds[NUM_STRIPS * NUM_LEDS_PER_STRIP];
+
+void sparkle(uint8_t mix)
+{
+  long now = millis();
+  int spotX = random16(1000);
+  int spotY = random16(1000);
+
+  u_int8_t spotRadius = 1 << random8(8);
+  float dropoff = 255 / spotRadius;
+  u_int8_t cIndex = random8();
+
+  for (int i = 0; i < NUM_LEDS; i++){
+    float x = cos(mapTheta[i] + now * 0.0002) * mapRho[i] + 300;
+    float y = sin(mapTheta[i] + now * 0.0002) * mapRho[i] + 300;
+
+    float dist = sqrt(sq(spotX - x) + sq(spotY - y));
+    if (dist < spotRadius)
+      sparkleLeds[i] = ColorFromPalette(ilukPal, cIndex, 255 - dist * dropoff);
+    else
+      sparkleLeds[i].fadeToBlackBy(8);
+
+      leds[i] = blend(leds[i], sparkleLeds[i], mix);
+  }
+}
+
 void test()
 {
   long t = millis() / 10;
@@ -284,7 +310,7 @@ void setup() {
 
 // List of patterns to cycle through.  Each is defined as a separate function below.
 typedef void (*SimplePatternList[])(uint8_t);
-SimplePatternList gPatterns = { zoom, rings, roll };
+SimplePatternList gPatterns = { zoom, sparkle, roll, rings};
 
 void nextPattern()
 {
@@ -293,16 +319,11 @@ void nextPattern()
   gNextPatternNumber = (gCurrentPatternNumber + 1) % ARRAY_SIZE(gPatterns); 
 }
 
-long lastT = 0;
-
 void loop()
 {
-
-  long t = millis();
-  Serial.println(t - lastT);
-  lastT = t;
   // Call the current pattern function once, updating the 'leds' array
-  gPatterns[gCurrentPatternNumber](255);
+  if (gCurrentMix < 255)
+    gPatterns[gCurrentPatternNumber](255);
   gPatterns[gNextPatternNumber](gCurrentMix);
 
   // send the 'leds' array out to the actual LED strip
@@ -322,5 +343,4 @@ void loop()
   EVERY_N_MILLIS( 20 ) { 
     gCurrentMix = constrain( gCurrentMix + 1, 0, 255); 
   }
-  
 }
